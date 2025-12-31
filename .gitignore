@@ -1,0 +1,45 @@
+# 编译产物
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.cgi
+
+# 构建目录
+.buildCacheDir/
+bin/
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 临时文件
+*.tar
+*.tar.gz
+*.zip
+*.log
+*.tmp
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 测试和调试文件
+test_*.sh
+*.json
+*.md
+
+# 其他临时文件
+kk
+ll.sh
+llk
+mk.sh
+

@@ -1,0 +1,88 @@
+#include "CIdentRelayApi.h"
+#include "tools/CTools.h"
+#include "tools/RuntimeGather.h"
+#include "relaycomm/ParseXmlData.h"
+
+bool CIdentRelayApi::GetLogPath(CStr2Map& paramap,CStr2Map& resultmap,bool throwexp)
+{
+    CStr2Map inMap;
+
+    inMap["transcode"] = TRANSCODE_COMM_QUERY_NOTOTAL;
+    inMap["reqid"] = "1804";
+
+    string str;
+    str = "id:" + paramap["log_id"];
+    inMap["fields"] = str;
+
+    CRelayCall* m_pRelayCall = CIdentRelayApi::GetRelayObj(CIdentRelayApi::IDENT_COMM_QUERY_NOTOTAL);
+            
+    bool ret = m_pRelayCall->Call(inMap);
+
+    InfoLog("send : %s", m_pRelayCall->getSendStr());
+    InfoLog("recv : %s", m_pRelayCall->getResultStr());
+
+    if (!CIdentRelayApi::ParseResult(ret, m_pRelayCall, resultmap, throwexp))
+    {
+        return false;
+    }
+
+    const Para_Struct paras[] = {
+        {"Flog_path"},
+        {"Flog_minio_path"},
+        {"Flog_id"},
+        {NULL}
+    };
+
+    resultmap["ret_num"]="0";
+    vector<CStr2Map> vectmapArray;
+    //解析xml格式获取数据
+    GetRecFromXml(vectmapArray, resultmap, m_pRelayCall->getResultStr(),&paras[0]);
+    if(vectmapArray.size() > 0)
+    {
+        resultmap.insert(vectmapArray[0].begin(),vectmapArray[0].end());
+    }
+    return true;
+}
+
+bool CIdentRelayApi::GetLogPathBath(const string paramap,string& result,string& strMinIOPath,bool throwexp)
+{
+	CStr2Map inMap,resultmap;
+
+    inMap["transcode"] = TRANSCODE_COMM_QUERY_NOTOTAL;
+    inMap["reqid"] = "1804";
+
+    string str;
+    str = "id:" + paramap;
+    inMap["fields"] = str;
+
+    CRelayCall* m_pRelayCall = CIdentRelayApi::GetRelayObj(CIdentRelayApi::IDENT_COMM_QUERY_NOTOTAL);
+            
+    bool ret = m_pRelayCall->Call(inMap);
+
+    InfoLog("send : %s", m_pRelayCall->getSendStr());
+    InfoLog("recv : %s", m_pRelayCall->getResultStr());
+
+    if (!CIdentRelayApi::ParseResult(ret, m_pRelayCall, resultmap, throwexp))
+    {
+        return false;
+    }
+
+    const Para_Struct paras[] = {
+        {"Flog_path"},
+        {"Flog_minio_path"},
+        {"Flog_id"},
+        {NULL}
+    };
+
+    resultmap["ret_num"]="0";
+    vector<CStr2Map> vectmapArray;
+
+    GetRecFromXml(vectmapArray, resultmap, m_pRelayCall->getResultStr(),&paras[0]);
+    if(vectmapArray.size() > 0)
+    {
+        resultmap.insert(vectmapArray[0].begin(),vectmapArray[0].end());
+		result = resultmap["Flog_path"];
+        strMinIOPath = resultmap["Flog_minio_path"];
+    }
+    return true;
+}

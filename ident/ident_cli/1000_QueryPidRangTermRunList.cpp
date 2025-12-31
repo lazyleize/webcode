@@ -1,0 +1,48 @@
+#include "CIdentRelayApi.h"
+#include "tools/CTools.h"
+#include "tools/RuntimeGather.h"
+#include "relaycomm/ParseXmlData.h"
+
+bool CIdentRelayApi::QueryPidRangTermRunList(CStr2Map& paramap,CStr2Map& resultmap,vector<CStr2Map>& vectmapArray,bool throwexp)
+{
+    CStr2Map inMap;
+
+    inMap["transcode"] = TRANSCODE_COMM_QUERY;
+    inMap["reqid"] = "1856";
+    inMap["offset"] = paramap["offset"].empty() ? "0" : paramap["offset"];
+    inMap["limit"] = paramap["limit"].empty() ? "0" : paramap["limit"];
+
+    string str = "nono:123456";
+    if(!paramap["pid_beg"].empty())
+	{
+		str += "|pid_beg:" + paramap["pid_beg"];
+	}
+	if(!paramap["pid_end"].empty())
+	{
+		str += "|pid_end:" + paramap["pid_end"];
+	}
+	inMap["fields"] = str;
+
+    CRelayCall* m_pRelayCall = CIdentRelayApi::GetRelayObj(CIdentRelayApi::IDENT_COMM_QUERY);
+            
+    bool ret = m_pRelayCall->Call(inMap);
+
+    InfoLog("send : %s", m_pRelayCall->getSendStr());
+    InfoLog("recv : %s", m_pRelayCall->getResultStr());
+
+    if (!CIdentRelayApi::ParseResult(ret, m_pRelayCall, resultmap, throwexp))
+    {
+        return false;
+    }
+
+    const Para_Struct paras[] = {
+                                {"Fterm_log_id"},
+                                {"File_path"},
+        {NULL}
+    };
+    resultmap["ret_num"]="0";
+    resultmap["total"]="0";
+    GetRecFromXml(vectmapArray,resultmap,m_pRelayCall->getResultStr(),&paras[0]);
+    return true ;
+}
+
