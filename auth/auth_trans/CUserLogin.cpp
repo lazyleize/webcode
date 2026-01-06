@@ -32,11 +32,17 @@ int CUserLogin::AuthCommit(CReqData *pReqData, CResData *pResData)
 	string strPostdata=pReqData->GetPostData();
 	CAuthPub::parsePubRespJson(strPostdata,inMap);
 
+    if(inMap["login_type"].empty())
+    {
+        ErrorLog("缺少登陆类型字段");
+        throw CTrsExp(ERR_WRITE_SESSION,"缺少登陆类型字段");
+    }
 
     inMap["loading_ip"] = pReqData->GetEnv("ClientIp");
 	//将原3des解密的改为RSA解密
     inMap["pwd"] = CAuthPub::WebrsaToAdsdes(1,inMap["pwd"],0,TIMEOUT_RSA);
 
+    //inMap["uin"] = inMap["name"];
     //检查用户名密码是否正确, 不正确则返回
     CAuthRelayApi::UserLogin(inMap, outMap, true);
     
@@ -86,10 +92,9 @@ int CUserLogin::AuthCommit(CReqData *pReqData, CResData *pResData)
     inMap["loading_ip"] = pReqData->GetEnv("ClientIp");
     if(!CAuthRelayApi::UpdateUserLogin(inMap))
     {
-
         DeleteLoginSession(strSessionKey,domain);
         ErrorLog("系统繁忙-更新用户登录信息失败:uin=[%s]",inMap["uin"].c_str());
-                throw CTrsExp(ERR_UPDATE_USER_LOGIN,"系统繁忙");
+        throw CTrsExp(ERR_UPDATE_USER_LOGIN,"系统繁忙");
     }
 	
     set_cookie("xsuin", outMap["name"].c_str(), NULL, "/",domain,0);

@@ -7,6 +7,10 @@
 #include "cgicomm/CResData.h"
 #include "CIdentComm.h"
 
+#undef max
+#undef min
+#include <rapidjson/document.h>
+
 class CQueryMaterialGetSvn: public CIdentComm
 {
 public:
@@ -24,6 +28,9 @@ public:
 	};
     virtual void CheckParameter( CStr2Map& inMap);
     virtual string buildJsonStringBom(int startRow, int limit,string& materialValue);
+    virtual string buildJsonStringForLoadBom(const string& materialCode);
+    virtual void parseBomJsonForSVN(const std::string& jsonString, vector<CStr2Map>& svnList);
+    virtual void extractSVNFromBomNode(const rapidjson::Value& node, vector<CStr2Map>& svnList);
     virtual void parseBomNumJson(const std::string& jsonString, string& OutMap);
     virtual string buildJsonStringForBDMaterial(const std::string& materialValue);
     virtual void parseSVNPathJson(const std::string& jsonString, string& OutMap);

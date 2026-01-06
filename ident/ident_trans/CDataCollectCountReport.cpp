@@ -13,12 +13,23 @@ int CDataCollectCountReport::IdentCommit(CReqData *pReqData, CResData *pResData)
 	// 取得请求参数
     pReqData->GetStrMap(inMap);
 
-	this->CheckLogin(sessionMap);
+	//this->CheckLogin(sessionMap);
     
-
 
     if(inMap["date"].empty())
         inMap["date"] = Date::now().format("Y-M-D");
+    else
+    {
+        CIdentRelayApi::QueryShipSum(inMap,outMap,true);
+
+	    CStr2Map returnMap;
+        CIdentComm::DelMapF(outMap,returnMap);
+
+	    pResData->SetPara("date",returnMap["date"]);
+        pResData->SetPara("today_count",returnMap["taday_count"]);
+        pResData->SetPara("last_day_counte",returnMap["last_count"]);
+        return 0;
+    }
 
     tempInMap["year"]=inMap["date"].substr(0,4);
     tempInMap["month"]=inMap["date"].substr(5,2);
@@ -38,19 +49,11 @@ int CDataCollectCountReport::IdentCommit(CReqData *pReqData, CResData *pResData)
 	CStr2Map returnMap;
     CIdentComm::DelMapF(outMap,returnMap);
 
-    //计算出较昨日新增百分比
-    /*int todayAdded = stoi(returnMap["taday_count"]);
-    int yesterdayAdded = stoi(returnMap["last_count"]);
-    double percentageChange = ((todayAdded - yesterdayAdded) / static_cast<double>(yesterdayAdded)) * 100;
-    string percentageStr = std::to_string(percentageChange);
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(2) << percentageChange;*/
 	
 	pResData->SetPara("date",returnMap["date"]);
 	
     pResData->SetPara("today_count",returnMap["taday_count"]);
     pResData->SetPara("last_day_counte",returnMap["last_count"]);
-    //pResData->SetPara("previous_day_perce",oss.str());
 
 	return 0;
 }

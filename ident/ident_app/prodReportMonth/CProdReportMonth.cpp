@@ -195,6 +195,18 @@ int CProdReportMonth::Commit(CStr2Map &inMap, CStr2Map &outMap)
             setMessageList(message, strType);
         }
     }
+    else//一个都没生成
+    {
+        if (!GenerateMonthReport(inMap, strMonthPath))
+        {
+            //2025年08月08日的16:32:40, 生成生产月统计报表异常。
+            strType = "ERROR";
+            message += "工厂生产月统计报表异常。";
+            setMessageList(message, strType);
+            ErrorLog("生成生产月统计报表异常 strMonthPath= [%s]", strMonthPath.c_str());
+            return 0;
+        }
+    }
     
     // 调用 Python 生成 Excel
     char cmd[512];

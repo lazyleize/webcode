@@ -811,10 +811,6 @@ int CAcControllerStats::GetRouterInfoFromAC(CSnmpClient& acClient, RouterInfo& r
         {
             InfoLog("尝试直接连接AP[%s]获取性能数据", router.name.c_str());
             string routerCommunity = g_AcCfg.group_name;
-            if (routerCommunity.empty())
-            {
-                routerCommunity = "xgd@#2025";
-            }
             int routerPort = 161;
             
             CSnmpClient routerClient(router.ip, routerPort, routerCommunity);
@@ -946,7 +942,6 @@ int CAcControllerStats::IdentCommit(CReqData *pReqData, CResData *pResData)
     // 从配置获取AC控制器信息
     string acIp = g_AcCfg.ip;
     string acCommunity = g_AcCfg.group_name;
-    int acPort = 161;
     
     // ========== 优先从Memcached读取实时统计数据 ==========
     // 数据采集服务（CAcDataCollector）已将实时数据写入Memcached
@@ -1001,31 +996,6 @@ int CAcControllerStats::IdentCommit(CReqData *pReqData, CResData *pResData)
         uint64_t totalUploadMonth = atoll(cacheMap["totalUploadMonth"].c_str());
         uint64_t totalDownloadMonth = atoll(cacheMap["totalDownloadMonth"].c_str());
         
-        // TODO: 从数据库查询今日和本月流量（如果需要准确的历史数据）
-        // 方式1：从 t_ac_controller_stats 表获取今日最新记录的流量
-        // CStr2Map queryInMap, queryOutMap;
-        // vector<CStr2Map> queryResult;
-        // queryInMap["ac_ip"] = acIp;
-        // queryInMap["date"] = dateStr;  // 今日日期
-        // // 调用 CIdentRelayApi::QueryAcControllerStatsToday(queryInMap, queryOutMap, queryResult, true);
-        // // 从 queryResult 中获取 Ftotal_upload_today 和 Ftotal_download_today
-        // // 如果数据库查询成功，使用数据库的值；否则使用Memcached的值
-        // if (queryResult.size() > 0) {
-        //     totalUploadToday = atoll(queryResult[0]["Ftotal_upload_today"].c_str());
-        //     totalDownloadToday = atoll(queryResult[0]["Ftotal_download_today"].c_str());
-        // }
-        //
-        // TODO: 从数据库查询本月流量
-        // 方式1：从 t_ac_controller_stats 表聚合本月所有记录的流量
-        // queryInMap["ac_ip"] = acIp;
-        // queryInMap["month"] = dateStr.substr(0, 7);  // YYYY-MM
-        // // 调用 CIdentRelayApi::QueryAcControllerStatsMonth(queryInMap, queryOutMap, queryResult, true);
-        // // 聚合所有记录的 Ftotal_upload_today 和 Ftotal_download_today
-        // if (queryResult.size() > 0) {
-        //     totalUploadMonth = atoll(queryResult[0]["month_upload"].c_str());
-        //     totalDownloadMonth = atoll(queryResult[0]["month_download"].c_str());
-        // }
-        
         // 设置返回参数
         pResData->SetPara("date", dateStr);
         pResData->SetPara("totalRouters", std::to_string(totalRouters));
@@ -1056,37 +1026,11 @@ int CAcControllerStats::IdentCommit(CReqData *pReqData, CResData *pResData)
         vector<CStr2Map> queryResult;
         queryInMap["ac_ip"] = acIp;
         queryInMap["date"] = dateStr;  // 今日日期
-        // TODO: 调用 CIdentRelayApi::QueryAcControllerStatsToday(queryInMap, queryOutMap, queryResult, true);
-        // 从 queryResult 中获取 Ftotal_upload_today 和 Ftotal_download_today
-        // 如果数据库查询失败，直接报错，不使用Memcached的值
-        // if (queryResult.size() > 0) {
-        //     totalUploadToday = atoll(queryResult[0]["Ftotal_upload_today"].c_str());
-        //     totalDownloadToday = atoll(queryResult[0]["Ftotal_download_today"].c_str());
-        // } else {
-        //     ErrorLog("从数据库查询今日流量失败: ac_ip=%s, date=%s", acIp.c_str(), dateStr);
-        //     throw(CTrsExp(ERR_UPFILE_COUNT, "从数据库查询今日流量失败"));
-        //     return 0;
-        // }
         
-        // TODO: 从数据库查询本月流量
-        // 方式1：从 t_ac_controller_stats 表聚合本月所有记录的流量
         queryInMap["ac_ip"] = acIp;
         string monthStr = string(dateStr).substr(0, 7);  // YYYY-MM
         queryInMap["month"] = monthStr;
-        // TODO: 调用 CIdentRelayApi::QueryAcControllerStatsMonth(queryInMap, queryOutMap, queryResult, true);
-        // 聚合所有记录的 Ftotal_upload_today 和 Ftotal_download_today
-        // 如果数据库查询失败，直接报错
-        // if (queryResult.size() > 0) {
-        //     totalUploadMonth = atoll(queryResult[0]["month_upload"].c_str());
-        //     totalDownloadMonth = atoll(queryResult[0]["month_download"].c_str());
-        // } else {
-        //     ErrorLog("从数据库查询本月流量失败: ac_ip=%s, month=%s", acIp.c_str(), queryInMap["month"].c_str());
-        //     throw(CTrsExp(ERR_UPFILE_COUNT, "从数据库查询本月流量失败"));
-        //     return 0;
-        // }
         
-        // 临时使用Memcached中的流量值（待数据库查询接口实现后替换）
-        // 注意：这里应该从数据库获取，而不是使用Memcached的值
         totalUploadToday = atoll(cacheMap["totalUploadToday"].c_str());
         totalDownloadToday = atoll(cacheMap["totalDownloadToday"].c_str());
         totalUploadMonth = atoll(cacheMap["totalUploadMonth"].c_str());

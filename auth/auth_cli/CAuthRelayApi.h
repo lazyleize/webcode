@@ -36,6 +36,7 @@
 #define TRANSCODE_UPDATE_ACTIVE_CODE      "100012" //更新激活码
 #define TRANSCODE_USER_ACTIVE             "100013" //账户激活
 #define TRANSCODE_CHECK_USER_ANSWER       "100015" //验证密保问题
+#define TRANSCODE_GETOTAB_CODE            "100018" //获取TOTP密钥
 #define TRANSCODE_CHECK_USERNAME_EXIST    "100027" //检查用户名是否注册
 #define TRANSCODE_TEST_UPDATE             "100028" //更新用户信息
 #define TRANSCODE_TEST_QUERY              "100029" //查询用户信息
@@ -265,6 +266,11 @@ namespace CAuthRelayApi
 
 	/*  检查最新可用版本号 */
 	bool QueryVerison(const CStr2Map& paramap, CStr2Map& resultmap, bool throwexp = true);
+
+    /*  获取TOTP密钥 */
+	bool getTotpSecret(const CStr2Map& paramap, CStr2Map& resultmap, bool throwexp = true);
+
+    
 
 	
 }

@@ -134,7 +134,6 @@ static int QueryOrderProductionFromERP(const string& order_no, int& production_q
             ErrorLog("ERP返回数据格式错误: 记录[%d]不是有效数组或字段不足", i);
         }
     }
-    
     production_qty = total_qty;
     DebugLog("查询ERP成功: 查询订单号=[%s], 返回记录数=[%d], 总生产数量=[%d]", 
             order_no.c_str(), record_count, production_qty);
@@ -239,7 +238,6 @@ int CNormUpload::IdentCommit(CReqData *pReqData, CResData *pResData)
 
 	//存记录
 	inMap["imei"] = replaceAll(inMap["imei"],"\r\n"," ");
-
 
 	CIdentRelayApi::NormalRecordLog(inMap,outMap,true);	
 
@@ -405,7 +403,7 @@ void CNormUpload::CheckParameter( CStr2Map& inMap)
 				string ass_pid = inMap["ass_pid"];
 				if(ass_pid.length() > 6)
 				{
-					inMap["order"] = ass_pid.substr(0, ass_pid.length() - 5);
+					inMap["order"] = ass_pid.substr(0, ass_pid.length() - 6);
 				}
 			}
 		}
@@ -415,13 +413,13 @@ void CNormUpload::CheckParameter( CStr2Map& inMap)
 		if(inMap["pos_name"]=="N80")//机型判断N80，在inMap["sn"]加上 ：N80+ASS+到秒的时间戳
 			inMap["sn"] = "N80ASS" + CIdentPub::GetCurrentDateTime();
 
-		if(inMap["sn"].empty())//需要对一下字段
+		// 只有当pos_name包含"KD"字符串时才执行此逻辑
+		if(inMap["pos_name"].find("KD") != string::npos && inMap["sn"].empty())//需要对一下字段
     	{
         	ErrorLog("KD68产品校验流程和N80解触发流程,SN为空");
 			//CIdentPub::SendAlarm2("KD68产品校验流程和N80解触发流程,SN不能为空[%s]",ERR_SIGNATURE_INCORRECT);
         	//throw CTrsExp(ERR_SIGNATURE_INCORRECT,"关键字段sn为空");
 			inMap["sn"] ="123456789ABCDEF";
-			
     	}
 	}
 	else //统一协议维修流程

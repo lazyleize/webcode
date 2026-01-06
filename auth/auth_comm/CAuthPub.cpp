@@ -882,8 +882,7 @@ string CAuthPub::WebrsaToAdsdes(int n_web,string &web_pwd,int n_ads,const int nu
 
     string rsa_key;
     CRsaHandler::GetCommRsaPrivateKey(n_web, rsa_key);
-    int dec_len=CRsaHandler::private_decrypt((unsigned char *)ascbuf,len,
-            (unsigned char *)rsa_key.c_str(),(unsigned char *)rsabuf);
+    int dec_len=CRsaHandler::private_decrypt((unsigned char *)ascbuf,len,(unsigned char *)rsa_key.c_str(),(unsigned char *)rsabuf);
     if(dec_len == -1)
     {
         ErrorLog("系统维护中-解密失败-n_web=[%d]-n_ads=[%d]-sec=[%d]",n_web,n_ads,num_sec);

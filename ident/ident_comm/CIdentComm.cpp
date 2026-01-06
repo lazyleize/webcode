@@ -4,6 +4,7 @@
 #include "tlib/tlib_all.h"
 #include "cgicomm/adsmem_rules.h"
 #include "libmemcached/memcached.h"
+#include "tools/tinyxml.h"
 
 /*
  * CGI入口
@@ -356,14 +357,55 @@ static memcached_st* CreateMemcacheConnection()
         ErrorLog("memcached_create failed");
         return NULL;
     }
-    g_allVar.GetValue("sessionfile");
 
-    // 默认使用本地memcache服务器，可以从配置文件读取
-    InfoLog("Session配置文件路径: %s", g_allVar.GetValue("sessionfile").c_str());
-    const char* server_ip = "127.0.0.1";
-    int port = 15210;
+    // 从配置文件读取memcache服务器配置
+    // 配置文件格式: <nodes><node ip="127.0.0.1" tcp_port="15210" desp="" /></nodes>
+    string sessionFile = g_allVar.GetValue("sessionfile");
+    string server_ip = "127.0.0.1";  // 默认值
+    int port = 15210;                 // 默认值
     
-    memcached_return_t rc = memcached_server_add(pMemc, server_ip, port);
+    if (!sessionFile.empty())
+    {
+        TiXmlDocument doc;
+        if (doc.LoadFile(sessionFile.c_str()))
+        {
+            TiXmlElement* root = doc.RootElement();
+            if (root != NULL)
+            {
+                TiXmlElement* nodes = root->FirstChildElement("nodes");
+                if (nodes != NULL)
+                {
+                    TiXmlElement* node = nodes->FirstChildElement("node");
+                    if (node != NULL)
+                    {
+                        const char* ip_attr = node->Attribute("ip");
+                        const char* port_attr = node->Attribute("tcp_port");
+                        
+                        if (ip_attr != NULL && strlen(ip_attr) > 0)
+                        {
+                            server_ip = ip_attr;
+                        }
+                        if (port_attr != NULL && strlen(port_attr) > 0)
+                        {
+                            port = atoi(port_attr);
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            ErrorLog("加载Session配置文件失败: %s, 使用默认配置", sessionFile.c_str());
+        }
+    }
+    else
+    {
+        ErrorLog("Session配置文件路径为空，使用默认配置");
+    }
+    
+    InfoLog("Memcache配置: ip=%s, port=%d (配置文件: %s)", server_ip.c_str(), port, sessionFile.c_str());
+    
+    memcached_return_t rc = memcached_server_add(pMemc, server_ip.c_str(), port);
     if (rc != MEMCACHED_SUCCESS)
     {
         ErrorLog("memcached_server_add failed: %s", memcached_strerror(pMemc, rc));
@@ -371,7 +413,7 @@ static memcached_st* CreateMemcacheConnection()
         return NULL;
     }
     
-    DebugLog("memcache连接创建成功: %s:%d", server_ip, port);
+    DebugLog("memcache连接创建成功: %s:%d", server_ip.c_str(), port);
     return pMemc;
 }
 

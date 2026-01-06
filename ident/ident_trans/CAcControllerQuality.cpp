@@ -86,8 +86,7 @@ int CAcControllerQuality::IdentCommit(CReqData *pReqData, CResData *pResData)
     }
     else
     {
-        ErrorLog("从AC获取在线AP数量失败: OID=%s, error=%s",
-                 onlineApOid.c_str(), acClient.GetLastError().c_str());
+        ErrorLog("从AC获取在线AP数量失败: OID=%s, error=%s",onlineApOid.c_str(), acClient.GetLastError().c_str());
     }
     
     acClient.Cleanup();
@@ -137,8 +136,7 @@ int CAcControllerQuality::IdentCommit(CReqData *pReqData, CResData *pResData)
     // 数据来源
     pResData->SetPara("data_source", "realtime");
     
-    InfoLog("返回网络质量数据: staRateComplianceRate=%d%%, qualityLevel=%s, totalUsers=%d",
-            staRateComplianceRate, qualityLevel.c_str(), totalUsers);
+    InfoLog("返回网络质量数据: staRateComplianceRate=%d%%, qualityLevel=%s, totalUsers=%d",staRateComplianceRate, qualityLevel.c_str(), totalUsers);
     
     return 0;
 }

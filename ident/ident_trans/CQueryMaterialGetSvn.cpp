@@ -33,58 +33,43 @@ int CQueryMaterialGetSvn::IdentCommit(CReqData *pReqData, CResData *pResData)
     DebugLog("token=[%s]",strOutToken.c_str());
 
     string getOrderUrl =  g_k3ErpCfg.strErpUrl;
-    getOrderUrl += "/gcs/erp/api/loadInvokeErpWebApi"; 
+    getOrderUrl += "/gcs/erp/api/loadBomByMaterialCode"; 
     string strResponse;
     //用63查询bom信息
-    if(CIdentPub::HttpPostERP(getOrderUrl,buildJsonStringBom(0,5,inMap["materi_63"]),strResponse,strOutToken))
+    string jsonRequest = buildJsonStringForLoadBom(inMap["materi_63"]);
+    DebugLog("请求JSON=[%s]",jsonRequest.c_str());
+    if(CIdentPub::HttpPostERP(getOrderUrl, jsonRequest, strResponse, strOutToken))
     {
         ErrorLog("http请求ERP错误");
         throw CTrsExp(ERR_NO_LOWER_LEVER,"请求ERP错误");
     }
-    DebugLog("strResponse=[%s]",strResponse.c_str());
-    //获取bom信息，再去查SVN地址
-    string strBomNum ;
-    parseBomNumJson(strResponse,strBomNum);
-    if(strBomNum.length() == 0)
+    //DebugLog("strResponse=[%s]",strResponse.c_str());
+    
+    //解析BOM信息，提取所有SVN地址
+    vector<CStr2Map> svnList;
+    parseBomJsonForSVN(strResponse, svnList);
+    
+    if(svnList.size() == 0)
     {
-        ErrorLog("获取Bom号失败");
-        throw CTrsExp(ERR_NO_LOWER_LEVER,"该63料号获取不到程序bom号(87开头)");
+        ErrorLog("未找到有效的SVN地址");
+        throw CTrsExp(ERR_NO_LOWER_LEVER,"该63料号未找到有效的SVN地址");
     }
+    
+    DebugLog("找到 %d 个SVN地址", svnList.size());
 
-    //strBomNum = "87.01.0001-001";//测试用
-    strResponse.clear();
-    //用63查询bom信息
-    if(CIdentPub::HttpPostERP(getOrderUrl,buildJsonStringForBDMaterial(strBomNum),strResponse,strOutToken))
-    {
-        ErrorLog("获取SVN失败");
-        throw CTrsExp(ERR_NO_LOWER_LEVER,"获取SVN失败");
-    }
-    DebugLog("strResponse=[%s]",strResponse.c_str());
-
-    string strSVNpath;
-    parseSVNPathJson(strResponse,strSVNpath);
-    if(strSVNpath.length()==0)
-    {
-        ErrorLog("SVN地址为空");
-        throw CTrsExp(ERR_NO_LOWER_LEVER,"该料号没有找到固件SVN地址");
-    }
-
-    //去查询这个订单号的组装PID最小值
-    CIdentRelayApi::GetAssMinPid(inMap,outMap,true);
-    if(outMap["ass_pid"].length()==0)
-    {
-        ErrorLog("没有找到最小PID");
-        throw CTrsExp(ERR_NO_LOWER_LEVER,"该订单没有组装记录,请在组装之后设置固件下载规则");
-    }
-
-    //返回
+    //返回基本参数
     pResData->SetPara("order",inMap["order"]);
     pResData->SetPara("model_name",inMap["model_name"]);
     pResData->SetPara("count",inMap["count"]);
     pResData->SetPara("materi_63",inMap["materi_63"]);
     pResData->SetPara("pid_start",outMap["ass_pid"]);
-    pResData->SetPara("svn_path",strSVNpath);
-    pResData->SetPara("file_name",getFileNameFromUrl(strSVNpath));
+    pResData->SetPara("ret_num", to_string(svnList.size()));
+    
+    //返回SVN地址数组
+    for(size_t i = 0; i < svnList.size(); ++i)
+    {
+        pResData->SetArray(svnList[i]);
+    }
 
 }
 
@@ -145,6 +130,126 @@ string CQueryMaterialGetSvn::buildJsonStringBom(int startRow, int limit,string& 
            ]
        }
     })";
+}
+
+string CQueryMaterialGetSvn::buildJsonStringForLoadBom(const string& materialCode)
+{
+    // 构建 loadBomByMaterialCode API 的请求JSON
+    return R"({"materialCode":")" + materialCode + R"("})";
+}
+
+void CQueryMaterialGetSvn::parseBomJsonForSVN(const std::string& jsonString, vector<CStr2Map>& svnList)
+{
+    // 清空输出容器
+    svnList.clear();
+    
+    // 解析JSON字符串
+    rapidjson::Document doc;
+    rapidjson::ParseResult ok = doc.Parse(jsonString.c_str());
+    
+    // 检查JSON解析是否成功
+    if (!ok) 
+    {
+        ErrorLog("JSON parse error at offset %u", (unsigned)ok.Offset());
+        return;
+    }
+    
+    // 检查是否为对象类型
+    if (!doc.IsObject()) {
+        ErrorLog("JSON root is not an object");
+        return;
+    }
+    
+    // 检查result字段
+    if (doc.HasMember("result") && doc["result"].IsBool()) 
+    {
+        if(!doc["result"].GetBool())
+        {
+            ErrorLog("result is false");
+            return;
+        }
+    }
+    
+    // 检查code字段
+    if (doc.HasMember("code") && doc["code"].IsInt()) {
+        if(doc["code"].GetInt() != 200)
+        {
+            ErrorLog("error,code is not 200, code=%d", doc["code"].GetInt());
+            return;
+        }
+    }
+    
+    // 检查data字段是否存在
+    if (!doc.HasMember("data") || !doc["data"].IsObject()) 
+    {
+        ErrorLog("JSON does not contain a valid 'data' object");
+        return;
+    }
+    
+    // 递归遍历BOM树，提取所有有效的SVN地址
+    const rapidjson::Value& dataObj = doc["data"];
+    extractSVNFromBomNode(dataObj, svnList);
+}
+
+void CQueryMaterialGetSvn::extractSVNFromBomNode(const rapidjson::Value& node, vector<CStr2Map>& svnList)
+{
+    if (!node.IsObject()) {
+        return;
+    }
+    
+    // 检查当前节点是否有material字段，且attachment字段有效
+    if (node.HasMember("material") && node["material"].IsObject())
+    {
+        const rapidjson::Value& material = node["material"];
+        if (material.HasMember("attachment") && material["attachment"].IsString())
+        {
+            string attachment = material["attachment"].GetString();
+            // 去除首尾空格
+            size_t start = attachment.find_first_not_of(" \t\n\r");
+            if (start != string::npos)
+            {
+                size_t end = attachment.find_last_not_of(" \t\n\r");
+                attachment = attachment.substr(start, end - start + 1);
+            }
+            
+            // 如果attachment不为空，且包含svn地址（以http://或https://开头）
+            if (!attachment.empty() && 
+                (attachment.find("http://") == 0 || attachment.find("https://") == 0))
+            {
+                CStr2Map svnMap;
+                svnMap["svn_path"] = attachment;
+                
+                // 提取料号信息
+                if (material.HasMember("code") && material["code"].IsString())
+                {
+                    svnMap["material_code"] = material["code"].GetString();
+                }
+                if (material.HasMember("name") && material["name"].IsString())
+                {
+                    svnMap["material_name"] = material["name"].GetString();
+                }
+                
+                // 提取当前节点的code（BOM版本号）
+                if (node.HasMember("code") && node["code"].IsString())
+                {
+                    svnMap["bom_code"] = node["code"].GetString();
+                }
+                
+                svnList.push_back(svnMap);
+                DebugLog("找到SVN地址: %s", attachment.c_str());
+            }
+        }
+    }
+    
+    // 递归处理子节点
+    if (node.HasMember("childs") && node["childs"].IsArray())
+    {
+        const rapidjson::Value& childs = node["childs"];
+        for (rapidjson::SizeType i = 0; i < childs.Size(); ++i)
+        {
+            extractSVNFromBomNode(childs[i], svnList);
+        }
+    }
 }
 
 void CQueryMaterialGetSvn::parseBomNumJson(const std::string& jsonString, string& OutMap)

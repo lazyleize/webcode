@@ -38,7 +38,7 @@ int CGetFirmVersion::IdentCommit(CReqData *pReqData, CResData *pResData)
     if(outMap["ret_num"]=="0")//找不到下载规则记录
     {
         ErrorLog("找不到下载规则");
-        CIdentPub::SendAlarm2("找不到下载规则,上送的PID超出范围或者没有web建单");
+        //CIdentPub::SendAlarm2("找不到下载规则,上送的PID超出范围或者没有web建单");
         throw CTrsExp(ERR_SIGNATURE_INCORRECT,"找不到下载规则,上送的PID超出范围或者没有web建单");
     }
     

@@ -14,9 +14,6 @@ bool CAuthRelayApi::UserLogin(const CStr2Map& paramap, CStr2Map& resultmap, bool
 	inMap["request_type"] = ss.str();
 	//交易码
 	inMap["transcode"] = TRANSCODE_USER_LOGIN;
-		
-	//inMap["uin"] = paramap["uin"];
-	//inMap["password"] = paramap["password"];
 
 	CRelayCall* m_pRelayCall = CAuthRelayApi::GetRelayObj(CAuthRelayApi::RQ_USER_LOGIN) ;
 	bool ret = m_pRelayCall->Call(inMap) ;

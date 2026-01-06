@@ -9,12 +9,34 @@
 #include <rapidjson/writer.h>
 #include "rapidjson/stringbuffer.h"
 
-std::string createJson(int startRow, int limit) {
+std::string createJson(int startRow, int limit, const std::string& orderNo = "") {
     // 构建 JSON 字符串
     std::string jsonString = "{\"formId\":\"PRD_INSTOCK\",\"deal\":\"EXECUTE_BILL_QUERY\",\"data\":{\"FormId\":\"PRD_INSTOCK\",\"StartRow\":"
         + std::to_string(startRow) + ",\"Limit\":"
-        + std::to_string(limit) + ",\"FieldKeys\":\"FDate,FRealQty,FMaterialID.F_BHR_Classific,FMaterialId.F_BHR_Model,FSrcBillNo,FMaterialId.FNumber\",\"FilterString\":[{\"Left\":\"\",\"FieldName\":\"FDate\",\"Compare\":\"265\",\"Value\":\"30\",\"Right\":\"\",\"Logic\":0},{\"Left\":\"\",\"FieldName\":\"FStockId.FName\",\"Compare\":\"67\",\"Value\":\"老化仓\",\"Right\":\"\",\"Logic\":0},{\"Left\":\"\",\"FieldName\":\"FMaterialId.FNumber\",\"Compare\":\"60\",\"Value\":\"62\",\"Right\":\"\",\"Logic\":0},{\"Left\":\"\",\"FieldName\":\"FDocumentStatus\",\"Compare\":\"105\",\"Value\":\"C\",\"Right\":\"\",\"Logic\":0},{\"Left\":\"\",\"FieldName\":\"FStockOrgId.FNumber\",\"Compare\":\"67\",\"Value\":\"1100\",\"Right\":\"\",\"Logic\":0}]}}";
-
+        + std::to_string(limit) + ",\"FieldKeys\":\"FDate,FRealQty,FMaterialID.F_BHR_Classific,FMaterialId.F_BHR_Model,FSrcBillNo,FMaterialId.FNumber\",\"FilterString\":[";
+    
+    // 根据是否有订单号来构建不同的过滤条件
+    if (!orderNo.empty()) {
+        // 如果有订单号，去掉30天限制，添加订单号过滤条件
+        // 订单号过滤条件
+        jsonString += "{\"Left\":\"\",\"FieldName\":\"FSrcBillNo\",\"Compare\":\"67\",\"Value\":\"" + orderNo + "\",\"Right\":\"\",\"Logic\":0},";
+        // 62料号过滤条件
+        jsonString += "{\"Left\":\"\",\"FieldName\":\"FMaterialId.FNumber\",\"Compare\":\"60\",\"Value\":\"62\",\"Right\":\"\",\"Logic\":0},";
+        // 文档状态过滤条件
+        jsonString += "{\"Left\":\"\",\"FieldName\":\"FDocumentStatus\",\"Compare\":\"105\",\"Value\":\"C\",\"Right\":\"\",\"Logic\":0},";
+        // 组织过滤条件
+        jsonString += "{\"Left\":\"\",\"FieldName\":\"FStockOrgId.FNumber\",\"Compare\":\"67\",\"Value\":\"1100\",\"Right\":\"\",\"Logic\":0}";
+    } else {
+        // 如果没有订单号，使用原来的查询条件（包含30天限制和老化仓限制）
+        jsonString += "{\"Left\":\"\",\"FieldName\":\"FDate\",\"Compare\":\"265\",\"Value\":\"30\",\"Right\":\"\",\"Logic\":0},";
+        jsonString += "{\"Left\":\"\",\"FieldName\":\"FStockId.FName\",\"Compare\":\"67\",\"Value\":\"老化仓\",\"Right\":\"\",\"Logic\":0},";
+        jsonString += "{\"Left\":\"\",\"FieldName\":\"FMaterialId.FNumber\",\"Compare\":\"60\",\"Value\":\"62\",\"Right\":\"\",\"Logic\":0},";
+        jsonString += "{\"Left\":\"\",\"FieldName\":\"FDocumentStatus\",\"Compare\":\"105\",\"Value\":\"C\",\"Right\":\"\",\"Logic\":0},";
+        jsonString += "{\"Left\":\"\",\"FieldName\":\"FStockOrgId.FNumber\",\"Compare\":\"67\",\"Value\":\"1100\",\"Right\":\"\",\"Logic\":0}";
+    }
+    
+    jsonString += "]}}";
+    
     return jsonString;
 }
 
@@ -26,14 +48,29 @@ int CQryK3AgingOrderList::IdentCommit(CReqData *pReqData, CResData *pResData)
 
 	this->CheckLogin(sessMap);
 
-	int limit = atol(inMap["limit"].c_str());
-	int offset = atol(inMap["offset"].c_str());
-    outMap["offset"] = inMap["offset"];
+	// 参数验证和初始化
+	int limit = 0;
+	int offset = 0;
+	if (inMap.find("limit") != inMap.end() && !inMap["limit"].empty()) {
+		limit = atol(inMap["limit"].c_str());
+	}
+	if (limit <= 0) {
+		limit = 50; // 默认值
+	}
+	
+	if (inMap.find("offset") != inMap.end() && !inMap["offset"].empty()) {
+		offset = atol(inMap["offset"].c_str());
+	}
+	if (offset <= 0) {
+		offset = 1; // 默认值
+	}
+	
+    outMap["offset"] = inMap.find("offset") != inMap.end() ? inMap["offset"] : "1";
 
 	offset = (offset -1)*limit;
     inMap["limit"] = Tools::IntToStr(limit);
 	inMap["offset"] = Tools::IntToStr(offset);
-
+	
 	inMap["usertype"] = sessMap["usertype"];
     int usertype = atoi(sessMap["usertype"].c_str());
     /*if(usertype != 2  && usertype != 1)
@@ -42,12 +79,12 @@ int CQryK3AgingOrderList::IdentCommit(CReqData *pReqData, CResData *pResData)
         throw CTrsExp(ERR_NO_LOWER_LEVER,"没有权限");
     }*/
 
+    // 确保全局配置已初始化后再访问
     string strUrl = g_k3ErpCfg.strErpUrl;
     strUrl += "/oauth-service/oauth/token";
-
     string strOutToken;
 
-    ErrorLog("strUrl[%s],strErpName[%s],strErpPasswd[%s]: usertype=[%s]" ,strUrl.c_str(),g_k3ErpCfg.strErpName.c_str(),g_k3ErpCfg.strErpPasswd.c_str());
+    ErrorLog("strUrl[%s],strErpName[%s],strErpPasswd[%s]" ,strUrl.c_str(),g_k3ErpCfg.strErpName.c_str(),g_k3ErpCfg.strErpPasswd.c_str());
     if(CIdentPub::HttpERPtoken(strUrl,g_k3ErpCfg.strErpName,g_k3ErpCfg.strErpPasswd,strOutToken) == -1)
     {
         ErrorLog("http请求ERP错误");
@@ -59,9 +96,17 @@ int CQryK3AgingOrderList::IdentCommit(CReqData *pReqData, CResData *pResData)
     string getOrderUrl =  g_k3ErpCfg.strErpUrl;
     getOrderUrl += "/gcs/erp/api/loadInvokeErpWebApi"; 
     string strResponse;
-    string strqu = createJson(offset,limit);
+    
+    // 获取订单号参数（如果前端传了order参数）
+    string orderNo = "";
+    if (inMap.find("order") != inMap.end() && !inMap["order"].empty()) {
+        orderNo = inMap["order"];
+        DebugLog("收到订单号参数: [%s]", orderNo.c_str());
+    }
+    
+    string strqu = createJson(offset, limit, orderNo);
     DebugLog("strqu=[%s]",strqu.c_str());
-    if(CIdentPub::HttpPostERP(getOrderUrl,createJson(offset,limit),strResponse,strOutToken))
+    if(CIdentPub::HttpPostERP(getOrderUrl, strqu, strResponse, strOutToken))
     {
         ErrorLog("http请求ERP错误");
         throw CTrsExp(ERR_NO_LOWER_LEVER,"请求ERP错误");

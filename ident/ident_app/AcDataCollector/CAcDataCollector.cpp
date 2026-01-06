@@ -53,8 +53,9 @@ string CAcDataCollector::ConvertMacToOidIndex(const string& hexMac)
     return result;
 }
 
-CAcDataCollector::CAcDataCollector() : m_stopped(false), m_acPort(161), m_lastTrafficTrendTime(0)
+CAcDataCollector::CAcDataCollector() : m_stopped(false), m_acPort(161), m_cachePort(15210), m_lastTrafficTrendTime(0)
 {
+    m_cacheIp = "127.0.0.1";  // 默认缓存服务器IP
 }
 
 CAcDataCollector::~CAcDataCollector()
@@ -96,6 +97,14 @@ int CAcDataCollector::Init()
     {
         ac_name_str = mVars["ac_community"];
     }
+    if(mVars.find("cache_ip")!=mVars.end())
+    {
+        m_cacheIp = mVars["cache_ip"];
+    }
+    if(mVars.find("cache_port")!=mVars.end())
+    {
+        m_cachePort = atoi(mVars["cache_port"].c_str());
+    }
     
     // 如果配置为空，使用默认值或返回错误
     if (ac_ip_str.empty())
@@ -103,6 +112,7 @@ int CAcDataCollector::Init()
         ErrorLog("配置中ac_ip为空，初始化失败");
         return -1;
     }
+    
     
     // 安全地复制字符串，确保缓冲区不溢出
     size_t ip_len = (ac_ip_str.length() < sizeof(ac_ip) - 1) ? ac_ip_str.length() : sizeof(ac_ip) - 1;
@@ -133,6 +143,7 @@ int CAcDataCollector::Init()
     }
     
     InfoLog("AC数据采集器初始化: IP=%s, Community=%s, Port=%d", m_acIp.c_str(), m_acCommunity.c_str(), m_acPort);
+    InfoLog("Memcached缓存配置: IP=%s, Port=%d", m_cacheIp.c_str(), m_cachePort);
     
     return 0;
 }
@@ -264,12 +275,7 @@ int CAcDataCollector::CollectData(CStr2Map &inMap, CStr2Map &outMap)
 }
 
 // 计算统计数据（复用CAcControllerStats的逻辑）
-void CAcDataCollector::CalculateStats(const vector<RouterInfo>& routers, 
-                                      int64_t apCount, int64_t userCount,
-                                      int64_t stationAssocSum, int64_t stationAssocFailSum,
-                                      int64_t stationReassocSum, int64_t stationAssocRejectedSum,
-                                      int64_t stationExDeAuthenSum,
-                                      AcStatsData& stats)
+void CAcDataCollector::CalculateStats(const vector<RouterInfo>& routers,int64_t apCount, int64_t userCount,int64_t stationAssocSum, int64_t stationAssocFailSum,int64_t stationReassocSum, int64_t stationAssocRejectedSum,int64_t stationExDeAuthenSum,AcStatsData& stats)
 {
     // 获取当前日期
     time_t now = time(NULL);
@@ -297,8 +303,7 @@ void CAcDataCollector::CalculateStats(const vector<RouterInfo>& routers,
     // 验证：如果AP总数和已查到的AP数量不一致，记录警告
     if (apCount > 0 && (int)routers.size() < apCount)
     {
-        ErrorLog("AP数量不一致: AC控制器报告总数=%d, 实际查到=%zu, 缺失=%d台AP", 
-                apCount, routers.size(), apCount - (int)routers.size());
+        ErrorLog("AP数量不一致: AC控制器报告总数=%d, 实际查到=%zu, 缺失=%d台AP",apCount, routers.size(), apCount - (int)routers.size());
     }
     
     int totalCpu = 0;
@@ -367,8 +372,7 @@ void CAcDataCollector::CalculateStats(const vector<RouterInfo>& routers,
     stats.stationAssocRejectedSum = stationAssocRejectedSum;
     stats.stationExDeAuthenSum = stationExDeAuthenSum;
     
-    InfoLog("统计数据: 总数=%d, 在线=%d, 离线=%d, 故障=%d, 平均CPU=%d%%, 平均内存=%d%%", 
-              totalRouters, onlineRouters, offlineRouters, faultRouters, avgCpu, avgMemory);
+    InfoLog("统计数据: 总数=%d, 在线=%d, 离线=%d, 故障=%d, 平均CPU=%d%%, 平均内存=%d%%",totalRouters, onlineRouters, offlineRouters, faultRouters, avgCpu, avgMemory);
 }
 
 // 存储实时数据到Memcached（供CGI程序快速读取）
@@ -390,10 +394,8 @@ int CAcDataCollector::SaveToMemcached(const AcStatsData& stats, const vector<Rou
         return -1;
     }
     
-    // 连接memcached服务器（使用项目默认配置）
-    const char* server_ip = "127.0.0.1";
-    int port = 15210;
-    memcached_return_t rc = memcached_server_add(pMemc, server_ip, port);
+    // 连接memcached服务器（使用配置文件中的配置）
+    memcached_return_t rc = memcached_server_add(pMemc, m_cacheIp.c_str(), m_cachePort);
     if (rc != MEMCACHED_SUCCESS)
     {
         ErrorLog("memcached_server_add failed: %s", memcached_strerror(pMemc, rc));
@@ -430,9 +432,7 @@ int CAcDataCollector::SaveToMemcached(const AcStatsData& stats, const vector<Rou
     
     // 存储统计数据（key: ac_stats_<ac_ip>）
     string statsKey = "ac_stats_" + m_acIp;
-    rc = memcached_set(pMemc, statsKey.c_str(), statsKey.length(),
-                      statsData.c_str(), statsData.length(), 
-                      0, 0);  // 不过期
+    rc = memcached_set(pMemc, statsKey.c_str(), statsKey.length(),statsData.c_str(), statsData.length(),0, 0);  // 持久
     
     if (rc == MEMCACHED_SUCCESS)
     {
@@ -440,8 +440,7 @@ int CAcDataCollector::SaveToMemcached(const AcStatsData& stats, const vector<Rou
     }
     else
     {
-        ErrorLog("统计数据存储失败: key=%s, error=%s", 
-                   statsKey.c_str(), memcached_strerror(pMemc, rc));
+        ErrorLog("统计数据存储失败: key=%s, error=%s",statsKey.c_str(), memcached_strerror(pMemc, rc));
     }
     
     // ========== 存储AP列表数据到Memcached ==========
@@ -478,9 +477,7 @@ int CAcDataCollector::SaveToMemcached(const AcStatsData& stats, const vector<Rou
     
     string apListData = apListOss.str();
     string apListKey = "ac_ap_list_" + m_acIp;
-    rc = memcached_set(pMemc, apListKey.c_str(), apListKey.length(),
-                      apListData.c_str(), apListData.length(), 
-                      0, 0);  // 不过期
+    rc = memcached_set(pMemc, apListKey.c_str(), apListKey.length(),apListData.c_str(), apListData.length(),0, 0);  // 不过期
     
     if (rc == MEMCACHED_SUCCESS)
     {
@@ -488,8 +485,7 @@ int CAcDataCollector::SaveToMemcached(const AcStatsData& stats, const vector<Rou
     }
     else
     {
-        ErrorLog("AP列表数据存储失败: key=%s, error=%s", 
-                   apListKey.c_str(), memcached_strerror(pMemc, rc));
+        ErrorLog("AP列表数据存储失败: key=%s, error=%s",apListKey.c_str(), memcached_strerror(pMemc, rc));
     }
     
     memcached_free(pMemc);
@@ -527,8 +523,7 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
     
     // 获取当前日期字符串（用于Memcached key）
     char dateStr[32] = {0};  // 初始化为0，确保字符串终止
-    snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", 
-             tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday);
+    snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d",tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday);
     dateStr[sizeof(dateStr) - 1] = '\0';  // 确保字符串终止
     
     // ========== 1. 计算瞬时速率并更新峰值流量 ==========
@@ -559,13 +554,11 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
         {
             // 瞬时速率 = (当前累计流量 - 上一条累计流量) / 时间差（秒）
             instantTraffic = (int64_t)((currentTotalTraffic - lastTotalTraffic) / timeDiff);
-            InfoLog("计算瞬时速率: 当前累计=%llu KB, 上一条累计=%llu KB, 时间差=%lld秒, 瞬时速率=%lld KB/s",
-                    currentTotalTraffic, lastTotalTraffic, timeDiff, instantTraffic);
+            InfoLog("计算瞬时速率: 当前累计=%llu KB, 上一条累计=%llu KB, 时间差=%lld秒, 瞬时速率=%lld KB/s",currentTotalTraffic, lastTotalTraffic, timeDiff, instantTraffic);
         }
         else
         {
-            InfoLog("无法计算瞬时速率: 时间差=%lld秒, 当前累计=%llu KB, 上一条累计=%llu KB",
-                    timeDiff, currentTotalTraffic, lastTotalTraffic);
+            InfoLog("无法计算瞬时速率: 时间差=%lld秒, 当前累计=%llu KB, 上一条累计=%llu KB",timeDiff, currentTotalTraffic, lastTotalTraffic);
         }
     }
     else
@@ -576,8 +569,6 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
     // 查询今日峰值并更新（如果瞬时速率更大）
     if (instantTraffic > 0)
     {
-        // 使用已声明的dateStr（第472行已声明）
-        
         // 优先从Memcached读取今日峰值
         // 注意：这里需要创建memcached连接来读取峰值数据
         // 由于SaveToMemcached函数中已经创建了连接，可以考虑复用
@@ -591,9 +582,7 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
         memcached_st* pMemcPeak = memcached_create(NULL);
         if (pMemcPeak != NULL)
         {
-            const char* server_ip = "127.0.0.1";
-            int port = 15210;
-            if (memcached_server_add(pMemcPeak, server_ip, port) == MEMCACHED_SUCCESS)
+            if (memcached_server_add(pMemcPeak, m_cacheIp.c_str(), m_cachePort) == MEMCACHED_SUCCESS)
             {
                 size_t valueLength = 0;
                 uint32_t flags = 0;
@@ -633,9 +622,7 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
             memcached_st* pMemcSet = memcached_create(NULL);
             if (pMemcSet != NULL)
             {
-                const char* server_ip = "127.0.0.1";
-                int port = 15210;
-                if (memcached_server_add(pMemcSet, server_ip, port) == MEMCACHED_SUCCESS)
+                if (memcached_server_add(pMemcSet, m_cacheIp.c_str(), m_cachePort) == MEMCACHED_SUCCESS)
                 {
                     memcached_return_t rc = memcached_set(pMemcSet, peakKey.c_str(), peakKey.length(),
                                                          peakValue.c_str(), peakValue.length(),
@@ -764,7 +751,7 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
         }
         
         // ========== 3. 计算并存储AP今日流量 ==========
-        // 今日流量计算逻辑（参考峰值流量方案）：
+        // 今日流量计算逻辑
         // 1. 从内存缓存获取该AP上一条记录的累计流量
         // 2. 计算本次增量 = 当前累计流量 - 上一条累计流量
         // 3. 如果上一条记录是今天的，累加到今日流量；如果是新的一天，重置今日流量
@@ -887,18 +874,6 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
             }
         }
         
-        // 更新今日流量到数据库
-        // 数据库操作：INSERT INTO t_ac_ap_today_traffic (Fac_ip, Fap_id, Fdate, Ftoday_upload, Ftoday_download, 
-        //            Ffirst_upload, Ffirst_download, Flast_upload, Flast_download, Ffirst_time, Flast_time, Fupdate_time)
-        //            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        //            ON DUPLICATE KEY UPDATE 
-        //            Ftoday_upload = Ftoday_upload + VALUES(Ftoday_upload),
-        //            Ftoday_download = Ftoday_download + VALUES(Ftoday_download),
-        //            Flast_upload = VALUES(Flast_upload),
-        //            Flast_download = VALUES(Flast_download),
-        //            Flast_time = VALUES(Flast_time),
-        //            Fupdate_time = VALUES(Fupdate_time)
-        // 注意：首次记录（Ffirst_upload, Ffirst_download, Ffirst_time）只在INSERT时设置，UPDATE时不改变
         CStr2Map todayTrafficInMap, todayTrafficOutMap;
         todayTrafficInMap["ac_ip"] = m_acIp;
         todayTrafficInMap["ap_id"] = routers[i].routerId;
@@ -937,9 +912,7 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
             memcached_st* pMemcToday = memcached_create(NULL);
             if (pMemcToday != NULL)
             {
-                const char* server_ip = "127.0.0.1";
-                int port = 15210;
-                if (memcached_server_add(pMemcToday, server_ip, port) == MEMCACHED_SUCCESS)
+                if (memcached_server_add(pMemcToday, m_cacheIp.c_str(), m_cachePort) == MEMCACHED_SUCCESS)
                 {
                     memcached_return_t rc = memcached_set(pMemcToday, todayTrafficKey.c_str(), todayTrafficKey.length(),
                                                          todayTrafficValue.c_str(), todayTrafficValue.length(),
@@ -950,8 +923,7 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
                     }
                     else
                     {
-                        ErrorLog("更新AP[%s]今日流量到Memcached失败: key=%s, error=%s", 
-                                routers[i].name.c_str(), todayTrafficKey.c_str(), memcached_strerror(pMemcToday, rc));
+                        ErrorLog("更新AP[%s]今日流量到Memcached失败: key=%s, error=%s",routers[i].name.c_str(), todayTrafficKey.c_str(), memcached_strerror(pMemcToday, rc));
                     }
                 }
                 memcached_free(pMemcToday);
@@ -1018,8 +990,7 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
         // 4.1 保存AC级别流量趋势数据
         // 注意：这里需要使用更新前的m_lastRecord.collectTime（即lastCollectTime）
         // 因为第679行已经将m_lastRecord.collectTime更新为currentTime了
-        InfoLog("流量趋势数据写入条件检查: m_lastRecord.valid=%d, lastCollectTime=%lld, m_lastRecord.collectTime=%lld", 
-               m_lastRecord.valid ? 1 : 0, (long long)lastCollectTime, (long long)m_lastRecord.collectTime);
+        InfoLog("流量趋势数据写入条件检查: m_lastRecord.valid=%d, lastCollectTime=%lld, m_lastRecord.collectTime=%lld",m_lastRecord.valid ? 1 : 0, (long long)lastCollectTime, (long long)m_lastRecord.collectTime);
         
         // 注意：这里需要使用更新前的m_lastRecord值（即lastCollectTime、lastTotalUpload、lastTotalDownload）
         // 因为第682-684行已经将m_lastRecord更新为本次采集的值了
@@ -1074,43 +1045,35 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
                     memcached_st* pMemcTrend = memcached_create(NULL);
                     if (pMemcTrend != NULL)
                     {
-                        const char* server_ip = "127.0.0.1";
-                        int port = 15210;
-                        if (memcached_server_add(pMemcTrend, server_ip, port) == MEMCACHED_SUCCESS)
+                        if (memcached_server_add(pMemcTrend, m_cacheIp.c_str(), m_cachePort) == MEMCACHED_SUCCESS)
                         {
                             // 尝试追加模式（如果key已存在则追加，不存在则返回NOT_STORED）
-                            memcached_return_t rc = memcached_append(pMemcTrend, trendKey.c_str(), trendKey.length(),
-                                                                     trendValue.c_str(), trendValue.length(), 86400, 0);
+                            memcached_return_t rc = memcached_append(pMemcTrend, trendKey.c_str(), trendKey.length(),trendValue.c_str(), trendValue.length(), 86400, 0);
                             if (rc == MEMCACHED_NOTSTORED)
                             {
                                 // 如果key不存在（NOT_STORED），使用set创建
                                 InfoLog("流量趋势数据key不存在，使用set创建: key=%s", trendKey.c_str());
-                                rc = memcached_set(pMemcTrend, trendKey.c_str(), trendKey.length(),
-                                                   trendValue.c_str(), trendValue.length(), 86400, 0);
+                                rc = memcached_set(pMemcTrend, trendKey.c_str(), trendKey.length(),trendValue.c_str(), trendValue.length(), 86400, 0);
                             }
                             else if (rc != MEMCACHED_SUCCESS)
                             {
                                 // 如果追加失败（其他错误），也尝试使用set
-                                ErrorLog("memcached_append失败，尝试使用set: key=%s, error=%s", 
-                                        trendKey.c_str(), memcached_strerror(pMemcTrend, rc));
-                                rc = memcached_set(pMemcTrend, trendKey.c_str(), trendKey.length(),
-                                                   trendValue.c_str(), trendValue.length(), 86400, 0);
+                                ErrorLog("memcached_append失败，尝试使用set: key=%s, error=%s",trendKey.c_str(), memcached_strerror(pMemcTrend, rc));
+                                rc = memcached_set(pMemcTrend, trendKey.c_str(), trendKey.length(),trendValue.c_str(), trendValue.length(), 86400, 0);
                             }
                             
                             if (rc == MEMCACHED_SUCCESS || rc == MEMCACHED_STORED)
                             {
-                                InfoLog("AC级别流量趋势数据已写入Memcached: key=%s, value_length=%zu", 
-                                       trendKey.c_str(), trendValue.length());
+                                InfoLog("AC级别流量趋势数据已写入Memcached: key=%s, value_length=%zu",trendKey.c_str(), trendValue.length());
                             }
                             else
                             {
-                                ErrorLog("写入AC级别流量趋势数据到Memcached失败: key=%s, error=%s", 
-                                        trendKey.c_str(), memcached_strerror(pMemcTrend, rc));
+                                ErrorLog("写入AC级别流量趋势数据到Memcached失败: key=%s, error=%s",trendKey.c_str(), memcached_strerror(pMemcTrend, rc));
                             }
                         }
                         else
                         {
-                            ErrorLog("连接Memcached失败，无法写入流量趋势数据: server=%s, port=%d", server_ip, port);
+                            ErrorLog("连接Memcached失败，无法写入流量趋势数据: server=%s, port=%d", m_cacheIp.c_str(), m_cachePort);
                         }
                         memcached_free(pMemcTrend);
                     }
@@ -1127,8 +1090,7 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
         }
         else
         {
-            InfoLog("上一条记录无效，跳过流量趋势数据写入: valid=%d, collectTime=%lld", 
-                   m_lastRecord.valid ? 1 : 0, (long long)m_lastRecord.collectTime);
+            InfoLog("上一条记录无效，跳过流量趋势数据写入: valid=%d, collectTime=%lld",m_lastRecord.valid ? 1 : 0, (long long)m_lastRecord.collectTime);
         }
         
         // 更新入库时间记录
@@ -1137,8 +1099,7 @@ int CAcDataCollector::SaveToMySQL(const AcStatsData& stats, const vector<RouterI
     }
     else
     {
-        InfoLog("未到流量趋势数据入库时间（上次入库: %lld, 当前分钟: %lld）", 
-               m_lastTrafficTrendTime, currentMinute);
+        InfoLog("未到流量趋势数据入库时间（上次入库: %lld, 当前分钟: %lld）",m_lastTrafficTrendTime, currentMinute);
     }
     
     InfoLog("历史数据保存完成（共 %zu 个AP）", routers.size());
@@ -1364,28 +1325,8 @@ vector<RouterInfo> CAcDataCollector::GetRouterListFromAC(CSnmpClient& acClient)
                 {
                     // 标准OID只找到部分AP（少于4台），继续尝试其他OID
                     InfoLog("通过OID %s 只找到 %zu 个AP（少于4台），继续尝试其他OID", tryOids[i].c_str(), routers.size());
-                    // 不清空routers，保留已找到的AP，继续尝试其他OID补充
                 }
             }
-        }
-    }
-    
-    // 如果Walk失败，使用默认4个路由器
-    if (routers.empty())
-    {
-        InfoLog("无法通过Walk获取路由器列表，使用默认4个路由器");
-        string defaultIps[] = {"192.168.201.254", "192.168.202.254", "192.168.203.254", "192.168.204.254"};
-        string defaultNames[] = {"路由器-001", "路由器-002", "路由器-003", "路由器-004"};
-        
-        for (int i = 1; i <= 4; ++i)
-        {
-            RouterInfo router;
-            char buf[64];
-            snprintf(buf, sizeof(buf), "%d", i);
-            router.routerId = buf;
-            router.name = defaultNames[i-1];
-            router.ip = defaultIps[i-1];
-            routers.push_back(router);
         }
     }
     
@@ -1445,8 +1386,7 @@ int CAcDataCollector::GetRouterInfoFromAC(CSnmpClient& acClient, RouterInfo& rou
         {
             router.mac = macValue;
             router.macOid = ConvertMacToOidIndex(macValue);
-            InfoLog("从AC获取到AP[%s]的MAC地址: %s (OID格式: %s)", 
-                     router.name.c_str(), router.mac.c_str(), router.macOid.c_str());
+            InfoLog("从AC获取到AP[%s]的MAC地址: %s (OID格式: %s)",router.name.c_str(), router.mac.c_str(), router.macOid.c_str());
         }
     }
     
@@ -1508,13 +1448,11 @@ int CAcDataCollector::GetRouterInfoFromAC(CSnmpClient& acClient, RouterInfo& rou
         uint32_t hours = router.runTime / 3600;
         uint32_t minutes = (router.runTime % 3600) / 60;
         uint32_t seconds = router.runTime % 60;
-        InfoLog("从AC获取到AP[%s]的运行时间: %u 秒 (%u小时 %u分钟 %u秒)", 
-                 router.name.c_str(), router.runTime, hours, minutes, seconds);
+        InfoLog("从AC获取到AP[%s]的运行时间: %u 秒 (%u小时 %u分钟 %u秒)",router.name.c_str(), router.runTime, hours, minutes, seconds);
     }
     else
     {
-        ErrorLog("从AC获取AP[%s]的运行时间失败: OID=%s, error=%s", 
-                 router.name.c_str(), runTimeOid.c_str(), acClient.GetLastError().c_str());
+        ErrorLog("从AC获取AP[%s]的运行时间失败: OID=%s, error=%s",router.name.c_str(), runTimeOid.c_str(), acClient.GetLastError().c_str());
     }
     
     // 获取温度（可选）
@@ -1563,8 +1501,7 @@ int CAcDataCollector::GetRouterInfoFromAC(CSnmpClient& acClient, RouterInfo& rou
             uint64_t uploadBytes = 0;
             sscanf(uploadTrafficValue.c_str(), "%llu", &uploadBytes);
             router.upload = uploadBytes / 1024;  // 转换为KB
-            InfoLog("从AC获取到AP[%s]的上行累计流量: %llu KB (%s Bytes)", 
-                     router.name.c_str(), router.upload, uploadTrafficValue.c_str());
+            InfoLog("从AC获取到AP[%s]的上行累计流量: %llu KB (%s Bytes)",router.name.c_str(), router.upload, uploadTrafficValue.c_str());
         }
     }
     
@@ -1583,8 +1520,7 @@ int CAcDataCollector::GetRouterInfoFromAC(CSnmpClient& acClient, RouterInfo& rou
             uint64_t downloadBytes = 0;
             sscanf(downloadTrafficValue.c_str(), "%llu", &downloadBytes);
             router.download = downloadBytes / 1024;  // 转换为KB
-            InfoLog("从AC获取到AP[%s]的下行累计流量: %llu KB (%s Bytes)", 
-                     router.name.c_str(), router.download, downloadTrafficValue.c_str());
+            InfoLog("从AC获取到AP[%s]的下行累计流量: %llu KB (%s Bytes)",router.name.c_str(), router.download, downloadTrafficValue.c_str());
         }
     }
     
@@ -1598,8 +1534,7 @@ int CAcDataCollector::GetRouterInfoFromAC(CSnmpClient& acClient, RouterInfo& rou
         uint32_t hours = router.onlineTime / 3600;
         uint32_t minutes = (router.onlineTime % 3600) / 60;
         uint32_t seconds = router.onlineTime % 60;
-        InfoLog("从AC获取到AP[%s]的上线时长: %u 秒 (%u小时 %u分钟 %u秒)", 
-                 router.name.c_str(), router.onlineTime, hours, minutes, seconds);
+        InfoLog("从AC获取到AP[%s]的上线时长: %u 秒 (%u小时 %u分钟 %u秒)",router.name.c_str(), router.onlineTime, hours, minutes, seconds);
     }
     else
     {

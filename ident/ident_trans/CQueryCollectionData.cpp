@@ -90,19 +90,56 @@ int CQueryCollectionData::IdentCommit(CReqData *pReqData, CResData *pResData)
             {
                 CStr2Map resultMap;
                 const Value& func = funcList[i];
-                resultMap["items_name"]   = func["description"].GetString();
-                resultMap["items_time"]   = to_string(func["duration"].GetInt()); 
-                resultMap["items_once"]   = func["OnceSuccess"].GetString();
-                resultMap["items_result"] = func["result"].GetString();
-                resultMap["rate"]         = func["SuccessRate"].GetString();
+                
+                // 安全获取 description 字段
+                if (func.HasMember("description") && func["description"].IsString())
+                    resultMap["items_name"] = func["description"].GetString();
+                else
+                    resultMap["items_name"] = "";
+                
+                // 安全获取 duration 字段
+                if (func.HasMember("duration") && func["duration"].IsInt())
+                    resultMap["items_time"] = to_string(func["duration"].GetInt());
+                else if (func.HasMember("duration") && func["duration"].IsNumber())
+                    resultMap["items_time"] = to_string((int)func["duration"].GetDouble());
+                else
+                    resultMap["items_time"] = "0";
+                
+                // 安全获取 OnceSuccess 字段
+                if (func.HasMember("OnceSuccess") && func["OnceSuccess"].IsString())
+                    resultMap["items_once"] = func["OnceSuccess"].GetString();
+                else
+                    resultMap["items_once"] = "";
+                
+                // 安全获取 result 字段
+                if (func.HasMember("result") && func["result"].IsString())
+                    resultMap["items_result"] = func["result"].GetString();
+                else
+                    resultMap["items_result"] = "";
+                
+                // 安全获取 SuccessRate 字段（可能是数字或字符串）
+                if (func.HasMember("SuccessRate"))
+                {
+                    if (func["SuccessRate"].IsNumber())
+                        resultMap["rate"] = to_string(func["SuccessRate"].GetDouble());
+                    else if (func["SuccessRate"].IsString())
+                        resultMap["rate"] = func["SuccessRate"].GetString();
+                    else
+                        resultMap["rate"] = "0";
+                }
+                else
+                    resultMap["rate"] = "0";
                 if (func.HasMember("errorMsg") && func["errorMsg"].IsArray())
                 {
                     const Value& errorMsgArray = func["errorMsg"];
                     string errorMessage = "";
                     for (size_t j = 0; j < errorMsgArray.Size(); j++)
                     {
-                        if (j > 0) errorMessage += ",";
+                        if (errorMsgArray[j].IsString())
+                        {
+                            if (j > 0) errorMessage += ",";
                             errorMessage += errorMsgArray[j].GetString();
+                        }
                     }
                     //去掉回车
                     errorMessage.erase(std::remove(errorMessage.begin(), errorMessage.end(), '\r'), errorMessage.end());

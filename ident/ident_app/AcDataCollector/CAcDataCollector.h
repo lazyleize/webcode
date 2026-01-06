@@ -131,6 +131,10 @@ private:
     string m_acCommunity;        // AC控制器community
     int m_acPort;                // AC控制器端口
     
+    // Memcached缓存配置
+    string m_cacheIp;            // 缓存服务器IP
+    int m_cachePort;             // 缓存服务器端口
+    
     // 上一条记录缓存（用于计算瞬时速率）
     struct LastRecord {
         uint64_t totalUpload;      // 上一条累计上行流量（KB）

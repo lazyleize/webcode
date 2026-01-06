@@ -7,6 +7,7 @@
 
 #include "CIdentAppComm.h"
 #include "CAcDataCollector.h"
+#include "CTrapReceiver.h"
 #include <signal.h>
 #include <unistd.h>
 #include <cstdio>
@@ -15,6 +16,7 @@
 
 CIdentAppComm* pIdentAppComm = NULL;
 CAcDataCollector* pAcDataCollector = NULL;
+CTrapReceiver* pTrapReceiver = NULL;
 bool g_running = true;
 
 // 信号处理函数
@@ -27,6 +29,10 @@ void SignalHandler(int sig)
         if (pAcDataCollector)
         {
             pAcDataCollector->Stop();
+        }
+        if (pTrapReceiver)
+        {
+            pTrapReceiver->Stop();
         }
     }
 }
@@ -103,6 +109,35 @@ int main(int argc, char** argv)
             return -1;
         }
 
+        // 初始化并启动Trap接收器（独立线程，不影响采集业务）
+        pTrapReceiver = new CTrapReceiver();
+        if (pTrapReceiver != NULL)
+        {
+            if (pTrapReceiver->Init() == 0)
+            {
+                if (pTrapReceiver->Start() == 0)
+                {
+                    XdInfoLog("Trap接收器已启动（独立线程）");
+                }
+                else
+                {
+                    XdErrorLog("Trap接收器启动失败，继续运行采集业务");
+                    delete pTrapReceiver;
+                    pTrapReceiver = NULL;
+                }
+            }
+            else
+            {
+                XdErrorLog("Trap接收器初始化失败，继续运行采集业务");
+                delete pTrapReceiver;
+                pTrapReceiver = NULL;
+            }
+        }
+        else
+        {
+            XdErrorLog("创建Trap接收器失败，继续运行采集业务");
+        }
+
         // 进入采集循环
         int loopCount = 0;
         while (g_running)
@@ -150,6 +185,14 @@ int main(int argc, char** argv)
     }
 
     // 清理资源
+    if (pTrapReceiver)
+    {
+        XdInfoLog("停止Trap接收器...");
+        pTrapReceiver->Stop();
+        delete pTrapReceiver;
+        pTrapReceiver = NULL;
+    }
+    
     if (pAcDataCollector)
     {
         pAcDataCollector->Cleanup();

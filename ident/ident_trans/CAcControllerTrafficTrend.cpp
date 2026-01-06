@@ -26,8 +26,7 @@ int CAcControllerTrafficTrend::IdentCommit(CReqData *pReqData, CResData *pResDat
     // 从配置获取AC控制器信息
     string acIp = g_AcCfg.ip;
     
-    InfoLog("请求参数: timeRange=%s, ac_ip=%s", 
-           timeRange.c_str(), acIp.c_str());
+    InfoLog("请求参数: timeRange=%s, ac_ip=%s",timeRange.c_str(), acIp.c_str());
     
     // ========== 2. 计算时间范围 ==========
     
@@ -78,52 +77,52 @@ int CAcControllerTrafficTrend::IdentCommit(CReqData *pReqData, CResData *pResDat
     
     InfoLog("从Memcached获取当天流量趋势数据: date=%s", todayDateStr);
         
-        // 构建Memcached key（只查询AC级别数据）
-        string trendKey = "ac_traffic_trend_" + acIp + "_ac_" + todayDateStr;
+    // 构建Memcached key（只查询AC级别数据）
+    string trendKey = "ac_traffic_trend_" + acIp + "_ac_" + todayDateStr;
         
-        string trendCache;
-        if (GetCache(trendKey, trendCache) == 0 && !trendCache.empty())
-        {
-            InfoLog("从Memcached读取到当天流量趋势数据: key=%s, length=%zu", trendKey.c_str(), trendCache.length());
+    string trendCache;
+    if (GetCache(trendKey, trendCache) == 0 && !trendCache.empty())
+    {
+        InfoLog("从Memcached读取到当天流量趋势数据: key=%s, length=%zu", trendKey.c_str(), trendCache.length());
             
-            // 解析Memcached数据（每行一个数据点，格式：time|upload|download）
-            istringstream iss(trendCache);
-            string line;
-            while (getline(iss, line))
-            {
-                if (line.empty()) continue;
+        // 解析Memcached数据（每行一个数据点，格式：time|upload|download）
+        istringstream iss(trendCache);
+        string line;
+        while (getline(iss, line))
+        {
+            if (line.empty()) continue;
                 
-                // 解析：time|upload|download
-                size_t pipe1 = line.find('|');
-                size_t pipe2 = line.find('|', pipe1 + 1);
-                if (pipe1 != string::npos && pipe2 != string::npos)
-                {
-                    string timeStr = line.substr(0, pipe1);
-                    string uploadStr = line.substr(pipe1 + 1, pipe2 - pipe1 - 1);
-                    string downloadStr = line.substr(pipe2 + 1);
+            // 解析：time|upload|download
+            size_t pipe1 = line.find('|');
+            size_t pipe2 = line.find('|', pipe1 + 1);
+            if (pipe1 != string::npos && pipe2 != string::npos)
+            {
+                string timeStr = line.substr(0, pipe1);
+                string uploadStr = line.substr(pipe1 + 1, pipe2 - pipe1 - 1);
+                string downloadStr = line.substr(pipe2 + 1);
                     
-                    // 检查时间是否在查询范围内
-                    // 将时间字符串转换为time_t进行比较
-                    struct tm tm_check = {0};
-                    if (sscanf(timeStr.c_str(), "%04d-%02d-%02d %02d:%02d:%02d",
-                               &tm_check.tm_year, &tm_check.tm_mon, &tm_check.tm_mday,
-                               &tm_check.tm_hour, &tm_check.tm_min, &tm_check.tm_sec) == 6)
-                    {
-                        tm_check.tm_year -= 1900;
-                        tm_check.tm_mon -= 1;
-                        time_t checkTime = mktime(&tm_check);
+                // 检查时间是否在查询范围内
+                // 将时间字符串转换为time_t进行比较
+                struct tm tm_check = {0};
+                if (sscanf(timeStr.c_str(), "%04d-%02d-%02d %02d:%02d:%02d",
+                            &tm_check.tm_year, &tm_check.tm_mon, &tm_check.tm_mday,
+                            &tm_check.tm_hour, &tm_check.tm_min, &tm_check.tm_sec) == 6)
+                {
+                    tm_check.tm_year -= 1900;
+                    tm_check.tm_mon -= 1;
+                    time_t checkTime = mktime(&tm_check);
                         
-                        if (checkTime >= startTime && checkTime <= now)
-                        {
-                            CStr2Map dataPoint;
-                            dataPoint["time"] = timeStr;
-                            dataPoint["upload"] = uploadStr;
-                            dataPoint["download"] = downloadStr;
-                            trafficData.push_back(dataPoint);
-                        }
+                    if (checkTime >= startTime && checkTime <= now)
+                    {
+                        CStr2Map dataPoint;
+                        dataPoint["time"] = timeStr;
+                        dataPoint["upload"] = uploadStr;
+                        dataPoint["download"] = downloadStr;
+                        trafficData.push_back(dataPoint);
                     }
                 }
             }
+        }
             
             InfoLog("从Memcached解析到 %zu 个当天数据点（在时间范围内）", trafficData.size());
         }
@@ -230,8 +229,7 @@ int CAcControllerTrafficTrend::IdentCommit(CReqData *pReqData, CResData *pResDat
         pResData->SetArray(dataPoint);
     }
     
-    InfoLog("返回流量趋势数据: timeRange=%s, 数据点数=%zu", 
-            timeRange.c_str(), trafficData.size());
+    InfoLog("返回流量趋势数据: timeRange=%s, 数据点数=%zu",timeRange.c_str(), trafficData.size());
     
     return 0;
 }

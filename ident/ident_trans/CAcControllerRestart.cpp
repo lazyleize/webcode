@@ -11,6 +11,7 @@
 #include <vector>
 #include <map>
 
+
 int CAcControllerRestart::IdentCommit(CReqData *pReqData, CResData *pResData)
 {
     CStr2Map inMap, outMap;
@@ -139,8 +140,7 @@ int CAcControllerRestart::IdentCommit(CReqData *pReqData, CResData *pResData)
                     errorMsg.find("Timeout") != string::npos ||
                     errorMsg.find("TIMEOUT") != string::npos)
                 {
-                    InfoLog("批量重启命令已发送（超时是预期的）: AP类型=%s, AP数量=%zu", 
-                           apType.c_str(), apIds.size());
+                    InfoLog("批量重启命令已发送（超时是预期的）: AP类型=%s, AP数量=%zu",apType.c_str(), apIds.size());
                     successCount++;
                 }
                 else
@@ -155,8 +155,7 @@ int CAcControllerRestart::IdentCommit(CReqData *pReqData, CResData *pResData)
         acClient.SetTimeout(originalTimeout);
         acClient.SetRetries(1);
         
-        InfoLog("批量重启完成: 成功 %d 种类型, 失败 %d 种类型, 总计 %zu 种类型", 
-               successCount, failCount, typeToApIds.size());
+        InfoLog("批量重启完成: 成功 %d 种类型, 失败 %d 种类型, 总计 %zu 种类型",successCount, failCount, typeToApIds.size());
         
         if (failCount > 0 && successCount == 0)
         {
@@ -183,27 +182,26 @@ int CAcControllerRestart::IdentCommit(CReqData *pReqData, CResData *pResData)
         
         InfoLog("验证AP存在: routerId=%s, name=%s", routerId.c_str(), apName.c_str());
         
-        // ========== 4. 执行单个AP重启操作 ==========
+        // ========== 4. 执行单个AP重启操作（根据AP ID） ==========
         
-        // 使用 hwWlanIDIndexedApAdminOper OID重启AP
-        // OID: 1.3.6.1.4.1.2011.6.139.13.3.10.1.20.{routerId} - hwWlanIDIndexedApAdminOper
-        // 索引: hwWlanIDIndexedApId (AP ID，即routerId)
+        // 使用 hwWlanIDIndexedApAdminOper OID重启AP（根据AP ID）
+        // OID: 1.3.6.1.4.1.2011.6.139.13.3.10.1.20.{apId} - hwWlanIDIndexedApAdminOper
+        // 索引: hwWlanIDIndexedApId (AP ID)
         // 值: 1=reset(重启), 2=confirm(确认), 3=manufacturerConfig(恢复出厂设置)
-        // 说明：根据MIB文档，该字段只支持write，不支持read
+        // 注意：该节点只支持write，不支持read
         
         string restartOid = "1.3.6.1.4.1.2011.6.139.13.3.10.1.20." + routerId;  // hwWlanIDIndexedApAdminOper
         int resetValue = 1;  // reset(重启AP)
         
-        // 设置短超时时间（100毫秒），不等待AC响应
-        // 因为重启操作需要时间，AC可能不会立即响应，但命令已经发送
+        // 设置合理的超时时间
+        // 根据测试，正确的OID和权限下，命令会正常返回
         int originalTimeout = 3000;  // 保存原始超时时间
-        acClient.SetTimeout(100);     // 设置短超时时间（100毫秒）
-        acClient.SetRetries(0);       // 不重试
+        acClient.SetTimeout(5000);   // 设置5秒超时（给重启操作足够时间）
+        acClient.SetRetries(1);     // 重试1次
         
-        InfoLog("执行重启操作（不等待返回）: OID=%s, routerId=%s, value=%d (reset)", 
-               restartOid.c_str(), routerId.c_str(), resetValue);
+        InfoLog("执行重启操作: OID=%s, routerId=%s, AP name=%s, value=%d (reset)",restartOid.c_str(), routerId.c_str(), apName.c_str(), resetValue);
         
-        // 执行SET操作，但不检查返回值（因为可能超时，但命令已发送）
+        // 执行SET操作
         int setResult = acClient.SetInt(restartOid, resetValue);
         
         // 恢复原始超时设置
@@ -213,29 +211,28 @@ int CAcControllerRestart::IdentCommit(CReqData *pReqData, CResData *pResData)
         if (setResult != 0)
         {
             string errorMsg = acClient.GetLastError();
-            // 如果是超时错误，认为命令已发送，继续执行
+            // 如果是超时错误，认为命令可能已发送
             if (errorMsg.find("timeout") != string::npos || 
                 errorMsg.find("Timeout") != string::npos ||
                 errorMsg.find("TIMEOUT") != string::npos)
             {
-                InfoLog("重启命令已发送（超时是预期的）: routerId=%s, OID=%s", 
-                       routerId.c_str(), restartOid.c_str());
+                InfoLog("重启命令可能已发送（超时）: routerId=%s, OID=%s",routerId.c_str(), restartOid.c_str());
             }
             else
             {
-                // 其他错误（如权限错误、OID错误等），记录但不阻止返回
-                InfoLog("重启AP可能失败（但命令已发送）: routerId=%s, OID=%s, error=%s", 
-                       routerId.c_str(), restartOid.c_str(), errorMsg.c_str());
+                // 其他错误（如权限错误、OID错误等）
+                ErrorLog("重启AP失败: routerId=%s, OID=%s, error=%s",routerId.c_str(), restartOid.c_str(), errorMsg.c_str());
+                acClient.Cleanup();
+                throw(CTrsExp(ERR_UPFILE_COUNT, "重启AP失败: " + errorMsg));
+                return 0;
             }
         }
         else
         {
-            InfoLog("重启命令发送成功: routerId=%s, AP name=%s", 
-                   routerId.c_str(), apName.c_str());
+            InfoLog("重启命令发送成功: routerId=%s, AP name=%s, OID=%s",routerId.c_str(), apName.c_str(), restartOid.c_str());
         }
         
-        InfoLog("重启AP命令已发送: routerId=%s, name=%s（不等待AP重启完成）", 
-               routerId.c_str(), apName.c_str());
+        InfoLog("重启AP命令已发送: routerId=%s, name=%s（不等待AP重启完成）",routerId.c_str(), apName.c_str());
     }
     
     // 清理AC控制器连接

@@ -134,8 +134,7 @@ vector<RouterDetailInfo> CAcControllerRoutersList::GetRouterListFromAC(CSnmpClie
             }
             
             routers.push_back(router);
-            InfoLog("发现AP: ID=%s, Name=%s, IP=%s, Status=%s", 
-                   apId.c_str(), apName.c_str(), router.ip.c_str(), router.status.c_str());
+            InfoLog("发现AP: ID=%s, Name=%s, IP=%s, Status=%s",apId.c_str(), apName.c_str(), router.ip.c_str(), router.status.c_str());
         }
     }
     else
@@ -203,8 +202,7 @@ int CAcControllerRoutersList::GetRouterDetailInfoFromAC(CSnmpClient& acClient, R
     if (acClient.Get(macOid, macHex) == 0 && !macHex.empty())
     {
         macOidIndex = ConvertMacToOidIndex(macHex);
-        InfoLog("从AC获取到AP[%s]的MAC地址: %s (OID格式: %s)", 
-               router.name.c_str(), macHex.c_str(), macOidIndex.c_str());
+        InfoLog("从AC获取到AP[%s]的MAC地址: %s (OID格式: %s)",router.name.c_str(), macHex.c_str(), macOidIndex.c_str());
     }
     
     // ========== 2. 获取性能数据 ==========
@@ -267,13 +265,11 @@ int CAcControllerRoutersList::GetRouterDetailInfoFromAC(CSnmpClient& acClient, R
         {
             // Mbps转KB/s: 1 Mbps = 125 KB/s
             router.downloadSpeedCurrent = (int)(downloadSpeedMbps * 125);
-            InfoLog("从AC获取到AP[%s]的下行实时速率: %d Mbps (%d KB/s)", 
-                   router.name.c_str(), (int)downloadSpeedMbps, router.downloadSpeedCurrent);
+            InfoLog("从AC获取到AP[%s]的下行实时速率: %d Mbps (%d KB/s)",router.name.c_str(), (int)downloadSpeedMbps, router.downloadSpeedCurrent);
         }
         else
         {
-            ErrorLog("从AC获取AP[%s]的下行实时速率失败: OID=%s, error=%s", 
-                     router.name.c_str(), downloadSpeedOid.c_str(), acClient.GetLastError().c_str());
+            ErrorLog("从AC获取AP[%s]的下行实时速率失败: OID=%s, error=%s",router.name.c_str(), downloadSpeedOid.c_str(), acClient.GetLastError().c_str());
         }
     }
     
@@ -298,8 +294,7 @@ int CAcControllerRoutersList::GetRouterDetailInfoFromAC(CSnmpClient& acClient, R
             // 注意：GetRouterDetailInfoFromAC函数中没有acIp和dateStr变量
             // 这些数据应该在调用方（IdentCommit）中从数据库获取，这里只从SNMP获取累计流量
             // TODO: 在调用方（IdentCommit）中从数据库获取今日流量
-            InfoLog("从AC获取到AP[%s]的上行累计流量: %llu KB (%s Bytes)", 
-                   router.name.c_str(), uploadBytes / 1024, uploadTrafficValue.c_str());
+            InfoLog("从AC获取到AP[%s]的上行累计流量: %llu KB (%s Bytes)",router.name.c_str(), uploadBytes / 1024, uploadTrafficValue.c_str());
         }
     }
     
@@ -321,8 +316,7 @@ int CAcControllerRoutersList::GetRouterDetailInfoFromAC(CSnmpClient& acClient, R
             // 注意：GetRouterDetailInfoFromAC函数中没有acIp和dateStr变量
             // 这些数据应该在调用方（IdentCommit）中从数据库获取，这里只从SNMP获取累计流量
             // TODO: 在调用方（IdentCommit）中从数据库获取今日流量
-            InfoLog("从AC获取到AP[%s]的下行累计流量: %llu KB (%s Bytes)", 
-                   router.name.c_str(), downloadBytes / 1024, downloadTrafficValue.c_str());
+            InfoLog("从AC获取到AP[%s]的下行累计流量: %llu KB (%s Bytes)",router.name.c_str(), downloadBytes / 1024, downloadTrafficValue.c_str());
         }
     }
     
@@ -370,13 +364,15 @@ int CAcControllerRoutersList::IdentCommit(CReqData *pReqData, CResData *pResData
     time_t now = time(NULL);
     struct tm *tm_now = localtime(&now);
     char dateStr[32];
-    snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", 
-             tm_now->tm_year + 1900, tm_now->tm_mon + 1, tm_now->tm_mday);
+    snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d",tm_now->tm_year + 1900, tm_now->tm_mon + 1, tm_now->tm_mday);
     
     // 从配置获取AC控制器信息
-    string acIp = g_AcCfg.ip;
+    if(inMap["ac_ip"].empty())
+    {
+        inMap["ac_ip"] = "192.168.7.252";
+    }
+    string acIp = inMap["ac_ip"];
     string acCommunity = g_AcCfg.group_name;
-    int acPort = 161;
     
     // ========== 2. 优先从Memcached读取AP列表数据 ==========
     // 数据采集服务（CAcDataCollector）已将实时数据写入Memcached
@@ -539,8 +535,7 @@ int CAcControllerRoutersList::IdentCommit(CReqData *pReqData, CResData *pResData
                         todayUpload = atoll(todayTrafficCache.substr(0, pipePos1).c_str());
                         todayDownload = atoll(todayTrafficCache.substr(pipePos1 + 1, pipePos2 - pipePos1 - 1).c_str());
                         todayFromCache = true;
-                        InfoLog("从Memcached读取到AP[%s]今日流量: 上行=%llu KB, 下行=%llu KB", 
-                               allRouters[i].routerId.c_str(), todayUpload, todayDownload);
+                        InfoLog("从Memcached读取到AP[%s]今日流量: 上行=%llu KB, 下行=%llu KB",allRouters[i].routerId.c_str(), todayUpload, todayDownload);
                     }
                 }
                 else
@@ -596,8 +591,7 @@ int CAcControllerRoutersList::IdentCommit(CReqData *pReqData, CResData *pResData
                         InfoLog("AP[%s]今日流量已写入Memcached: key=%s, value=%s", allRouters[i].routerId.c_str(), todayTrafficKey.c_str(), todayTrafficValue.c_str());
                     }
                 } else {
-                    ErrorLog("从数据库查询今日流量失败: ac_ip=%s, ap_id=%s, date=%s", 
-                            acIp.c_str(), allRouters[i].routerId.c_str(), dateStr);
+                    ErrorLog("从数据库查询今日流量失败: ac_ip=%s, ap_id=%s, date=%s",acIp.c_str(), allRouters[i].routerId.c_str(), dateStr);
                     throw(CTrsExp(ERR_UPFILE_COUNT, "从数据库查询今日流量失败"));
                     return 0;
                 }
@@ -622,8 +616,7 @@ int CAcControllerRoutersList::IdentCommit(CReqData *pReqData, CResData *pResData
                     uint64_t runTimeSeconds = atoll(resultMap["run_time"].c_str());
                     allRouters[i].uptime = (uint32_t)runTimeSeconds;  // 直接使用，单位已经是秒
                 } else {
-                    ErrorLog("从数据库查询运行时间失败: ac_ip=%s, ap_id=%s", 
-                            acIp.c_str(), allRouters[i].routerId.c_str());
+                    ErrorLog("从数据库查询运行时间失败: ac_ip=%s, ap_id=%s",acIp.c_str(), allRouters[i].routerId.c_str());
                     throw(CTrsExp(ERR_UPFILE_COUNT, "从数据库查询运行时间失败"));
                     return 0;
                 }
@@ -697,9 +690,12 @@ int CAcControllerRoutersList::IdentCommit(CReqData *pReqData, CResData *pResData
         {
             routerMap["temperature"] = std::to_string(router.temperature);  // 温度（℃），可选
         }
-        
+        else
+            routerMap["temperature"]  = "0";
+
         routerMap["uptime"] = std::to_string(router.uptime);  // 运行时长（秒）
         routerMap["lastUpdate"] = router.lastUpdate;           // 最后更新时间
+        
         
         // 添加到返回数组
         pResData->SetArray(routerMap);

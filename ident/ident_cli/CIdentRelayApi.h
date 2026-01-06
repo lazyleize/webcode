@@ -485,5 +485,8 @@ namespace CIdentRelayApi
 	/* 查询AC/AP流量趋势数据 */
 	// 数据库操作：根据时间范围、AC IP、AP ID查询并聚合数据
 	bool QueryAcTrafficTrendList(CStr2Map& paramap, CStr2Map& resultmap, vector<CStr2Map>& vectmapArray, bool throwexp);
+
+	/* 查询年度报表数据 */
+	bool QueryYearSummary(CStr2Map& paramap,CStr2Map& resultmap,bool throwexp);
 }
 #endif

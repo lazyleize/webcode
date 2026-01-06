@@ -19,12 +19,13 @@ bool CIdentRelayApi::NormalRecordLog(const CStr2Map& paramap, CStr2Map& resultma
     InfoLog("send : %s", m_pRelayCall->getSendStr()) ;
     InfoLog("recv : %s", m_pRelayCall->getResultStr());
 
-	resultmap["is_create"] = "";
-	resultmap["factory"] = "";
-	vector<CStr2Map> vectmap;
 	if(!CIdentRelayApi::ParseResult(ret,m_pRelayCall,resultmap,throwexp))
         return false ;
 
+	resultmap["is_create"] = "";
+	resultmap["factory"] = "";
+	vector<CStr2Map> vectmap;
+	GetRecFromXml(vectmap,resultmap,m_pRelayCall->getResultStr(),NULL);
     return true;
 
 }

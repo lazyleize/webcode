@@ -16,7 +16,6 @@ int CAcControllerRealtime::IdentCommit(CReqData *pReqData, CResData *pResData)
     // 从配置获取AC控制器信息
     string acIp = g_AcCfg.ip;
     string acCommunity = g_AcCfg.group_name;
-    // int acPort = 161;  // 暂未使用
     
     // ========== 优先从Memcached读取实时数据 ==========
     // 数据采集服务（CAcDataCollector）已将实时数据写入Memcached
@@ -143,8 +142,7 @@ int CAcControllerRealtime::IdentCommit(CReqData *pReqData, CResData *pResData)
         currentUpload = totalUploadSpeed * 125;
         currentDownload = totalDownloadSpeed * 125;
         
-        InfoLog("从Memcached解析到 %d 个AP，总连接数=%d，总上行速率=%d KB/s，总下行速率=%d KB/s", 
-                apCount, totalConnections, currentUpload, currentDownload);
+        InfoLog("从Memcached解析到 %d 个AP，总连接数=%d，总上行速率=%d KB/s，总下行速率=%d KB/s",apCount, totalConnections, currentUpload, currentDownload);
     }
     else
     {
@@ -154,21 +152,6 @@ int CAcControllerRealtime::IdentCommit(CReqData *pReqData, CResData *pResData)
         return 0;
     }
     
-    // 验证数据完整性
-    if (totalConnections == 0 && (currentUpload == 0 && currentDownload == 0))
-    {
-        ErrorLog("从Memcached读取的数据不完整: 总连接数=%d, 上行速率=%d, 下行速率=%d", 
-                totalConnections, currentUpload, currentDownload);
-        throw(CTrsExp(ERR_UPFILE_COUNT, "从Memcached读取的数据不完整，请检查数据采集服务"));
-        return 0;
-    }
-    
-    // ========== 从Memcached查询峰值流量和时间（优先从缓存读取，失败则从数据库查询） ==========
-    // 优化方案：峰值流量在采集服务入库时已计算并存储到Memcached和数据库
-    // 1. 优先从Memcached读取（< 1ms，最快）
-    // 2. 如果Memcached没有，从数据库查询（< 10ms）
-    // 3. 查询后写入Memcached（下次走缓存）
-    //
     int peakTraffic = 0;
     string peakTime = "";
     
@@ -176,8 +159,7 @@ int CAcControllerRealtime::IdentCommit(CReqData *pReqData, CResData *pResData)
     time_t now = time(NULL);
     struct tm *tm_now = localtime(&now);
     char dateStr[32];
-    snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d", 
-             tm_now->tm_year + 1900, tm_now->tm_mon + 1, tm_now->tm_mday);
+    snprintf(dateStr, sizeof(dateStr), "%04d-%02d-%02d",tm_now->tm_year + 1900, tm_now->tm_mon + 1, tm_now->tm_mday);
     
     // 优先从Memcached读取今日峰值
     // Key格式：ac_peak_traffic_<ac_ip>_<date>
@@ -263,8 +245,7 @@ int CAcControllerRealtime::IdentCommit(CReqData *pReqData, CResData *pResData)
         pResData->SetPara("peakTime", "");
     }
     
-    InfoLog("返回实时监控数据: 总连接数=%d, 上行速率=%d KB/s, 下行速率=%d KB/s, 峰值流量=%d KB/s, 峰值时间=%s", 
-            totalConnections, currentUpload, currentDownload, peakTraffic, peakTime.c_str());
+    InfoLog("返回实时监控数据: 总连接数=%d, 上行速率=%d KB/s, 下行速率=%d KB/s, 峰值流量=%d KB/s, 峰值时间=%s",totalConnections, currentUpload, currentDownload, peakTraffic, peakTime.c_str());
     
     return 0;
 }
